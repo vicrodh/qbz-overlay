@@ -21,7 +21,7 @@ RDEPEND="
 	x11-libs/gtk+:3
 	media-libs/alsa-lib
 	dev-libs/openssl
-	dev-libs/libayatana-appindicator
+	dev-libs/libappindicator:3
 	x11-libs/libxkbcommon
 "
 
