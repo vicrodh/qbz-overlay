@@ -3,19 +3,21 @@
 
 EAPI=8
 
-inherit xdg
+inherit cargo xdg
 
 DESCRIPTION="Native hi-fi Qobuz desktop player for Linux"
 HOMEPAGE="https://qbz.lol https://github.com/vicrodh/qbz"
 
 MY_PV="${PV}"
-SRC_URI="https://github.com/vicrodh/qbz/archive/refs/tags/v${MY_PV}.tar.gz -> ${P}.tar.gz"
+SRC_URI="
+	https://github.com/vicrodh/qbz/archive/refs/tags/v${MY_PV}.tar.gz -> ${P}.tar.gz
+	${CARGO_CRATE_URIS}
+"
 
 LICENSE="MIT"
 SLOT="0"
 KEYWORDS="~amd64 ~arm64"
 IUSE="pipewire pulseaudio"
-RESTRICT="mirror network-sandbox"
 
 RDEPEND="
 	net-libs/webkit-gtk:4.1
@@ -26,7 +28,7 @@ RDEPEND="
 	x11-libs/libxkbcommon
 	gnome-base/librsvg:2
 	pipewire? (
-		media-video/pipewire[pipewire-alsa]
+		media-video/pipewire[alsa-plugin]
 	)
 	pulseaudio? (
 		media-libs/libpulse
@@ -34,29 +36,49 @@ RDEPEND="
 "
 
 BDEPEND="
-	dev-lang/rust
+	virtual/rust
 	net-libs/nodejs[npm]
-	llvm-core/clang
+	sys-devel/clang
 	virtual/pkgconfig
 "
 
+# alsa-utils improves device detection for bit-perfect playback
 PDEPEND="
 	media-sound/alsa-utils
 "
 
 S="${WORKDIR}/qbz-${MY_PV}"
 
+src_prepare() {
+	default
+
+	# Generate cargo config for offline build if needed
+	cargo_src_prepare
+}
+
+src_configure() {
+	cargo_src_configure
+}
+
 src_compile() {
-	npm ci || die "npm ci failed"
-	npx tauri build --no-bundle || die "tauri build failed"
+	# Build the SvelteKit frontend
+	npm ci --prefer-offline || die "npm ci failed"
+	npm run build || die "frontend build failed"
+
+	# Build the Tauri/Rust backend (no bundler — we install manually)
+	cd src-tauri || die
+	cargo_src_compile --bin qbz
 }
 
 src_install() {
+	# Install the binary
 	dobin "src-tauri/target/release/qbz"
 
+	# Desktop file
 	insinto /usr/share/applications
 	newins packaging/arch/qbz.desktop qbz.desktop
 
+	# Icons
 	local size
 	for size in 32 48 64 128 256; do
 		local src_icon="src-tauri/icons/${size}x${size}.png"
@@ -66,6 +88,7 @@ src_install() {
 		fi
 	done
 
+	# Use the high-res icon as a fallback for missing sizes
 	local fallback="src-tauri/icons/128x128.png"
 	for size in 48 64; do
 		if [[ ! -f "src-tauri/icons/${size}x${size}.png" ]]; then
